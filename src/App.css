@@ -18,11 +18,22 @@ html, body, #root {
   align-items: flex-end;
   justify-content: flex-end;
   background: transparent;
+  /* Only the cat itself is interactive — the rest of the transparent
+     window must never eat clicks */
+  pointer-events: none;
 }
 
 .cat-canvas {
+  pointer-events: auto;
   image-rendering: pixelated;
-  image-rendering: crisp-edges;
+  cursor: grab;
+  display: block;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.cat-canvas:active {
+  cursor: grabbing;
 }
 
 .settings-root {

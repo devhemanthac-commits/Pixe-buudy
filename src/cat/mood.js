@@ -1,5 +1,7 @@
-// Mood state machine
-// Priority (descending): DRAG > PET > OVERHEAT > HUNT > KNEAD > SCROLL > WALK > IDLE > SLEEP
+// Mood state machine.
+// External signals set/clear flags; the machine resolves the highest-priority
+// active flag. Priority (descending):
+//   DRAG > PET > OVERHEAT > HUNT > KNEAD > SCROLL > WALK > IDLE > SLEEP
 
 export const STATES = {
   DRAG:     'drag',
@@ -32,25 +34,49 @@ export class MoodStateMachine {
     this.current = STATES.IDLE
     this.activeFlags = new Set()
     this._onChange = null
+    this._tempTimers = new Map() // flag → timeout id
     this._walkTimer = null
-    this._idleTimer = null
-    this._startWalkCycle()
+    this._destroyed = false
+    this._scheduleWalk()
   }
 
   onStateChange(cb) {
     this._onChange = cb
   }
 
-  // External signals set/clear flags; machine resolves the highest-priority active one
+  has(flag) {
+    return this.activeFlags.has(flag)
+  }
+
   set(flag) {
-    if (!PRIORITY.includes(flag)) return
+    if (this._destroyed || !PRIORITY.includes(flag)) return
     this.activeFlags.add(flag)
     this._resolve()
   }
 
   clear(flag) {
-    this.activeFlags.delete(flag)
-    this._resolve()
+    if (this._destroyed) return
+    const timer = this._tempTimers.get(flag)
+    if (timer) {
+      clearTimeout(timer)
+      this._tempTimers.delete(flag)
+    }
+    if (this.activeFlags.delete(flag)) this._resolve()
+  }
+
+  // Set a flag that auto-clears after ms. Re-setting extends the window.
+  setTemporary(flag, ms) {
+    if (this._destroyed || !PRIORITY.includes(flag)) return
+    this.set(flag)
+    const existing = this._tempTimers.get(flag)
+    if (existing) clearTimeout(existing)
+    this._tempTimers.set(
+      flag,
+      setTimeout(() => {
+        this._tempTimers.delete(flag)
+        this.clear(flag)
+      }, ms)
+    )
   }
 
   _resolve() {
@@ -67,27 +93,23 @@ export class MoodStateMachine {
     }
   }
 
-  // Randomly enter WALK state every 30–60s while idle
-  _startWalkCycle() {
-    const schedule = () => {
-      const delay = 30000 + Math.random() * 30000
-      this._walkTimer = setTimeout(() => {
-        if (this.current === STATES.IDLE) {
-          this.set(STATES.WALK)
-          setTimeout(() => {
-            this.clear(STATES.WALK)
-            schedule()
-          }, 3000 + Math.random() * 4000)
-        } else {
-          schedule()
-        }
-      }, delay)
-    }
-    schedule()
+  // Random wander: every 30-60s, if idle, walk for 3-7s
+  _scheduleWalk() {
+    if (this._destroyed) return
+    const delay = 30000 + Math.random() * 30000
+    this._walkTimer = setTimeout(() => {
+      if (this.current === STATES.IDLE) {
+        this.setTemporary(STATES.WALK, 3000 + Math.random() * 4000)
+      }
+      this._scheduleWalk()
+    }, delay)
   }
 
   destroy() {
+    this._destroyed = true
     if (this._walkTimer) clearTimeout(this._walkTimer)
-    if (this._idleTimer) clearTimeout(this._idleTimer)
+    for (const timer of this._tempTimers.values()) clearTimeout(timer)
+    this._tempTimers.clear()
+    this._onChange = null
   }
 }

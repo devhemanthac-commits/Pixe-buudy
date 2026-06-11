@@ -1,23 +1,34 @@
 const { contextBridge, ipcRenderer } = require('electron')
 
+// Each on* helper returns an unsubscribe function so the renderer can
+// clean up precisely instead of nuking whole channels.
+function subscribe(channel) {
+  return (cb) => {
+    const handler = (_event, data) => cb(data)
+    ipcRenderer.on(channel, handler)
+    return () => ipcRenderer.removeListener(channel, handler)
+  }
+}
+
 contextBridge.exposeInMainWorld('electronAPI', {
   // Renderer → Main
   setCatBounds: (bounds) => ipcRenderer.send('cat-bounds', bounds),
-  startDrag: () => ipcRenderer.send('start-drag'),
+  dragStart: (offset) => ipcRenderer.send('drag-start', offset),
+  dragEnd: () => ipcRenderer.send('drag-end'),
   openSettings: () => ipcRenderer.send('open-settings'),
   quitApp: () => ipcRenderer.send('quit-app'),
 
-  // Main → Renderer (subscribe)
-  onMouseMove: (cb) => ipcRenderer.on('mouse-move', (_e, data) => cb(data)),
-  onMouseDown: (cb) => ipcRenderer.on('mouse-down', (_e, data) => cb(data)),
-  onMouseUp: (cb) => ipcRenderer.on('mouse-up', (_e, data) => cb(data)),
-  onScroll: (cb) => ipcRenderer.on('scroll', (_e, data) => cb(data)),
-  onKeypressRate: (cb) => ipcRenderer.on('keypress-rate', (_e, data) => cb(data)),
+  // Main → Renderer
+  onMouseMove: subscribe('mouse-move'),
+  onMouseDown: subscribe('mouse-down'),
+  onMouseUp: subscribe('mouse-up'),
+  onScroll: subscribe('scroll'),
+  onKeypressRate: subscribe('keypress-rate'),
+  onIdleChange: subscribe('idle-change'),
+  onActiveApp: subscribe('active-app'),
+  onDragEnded: subscribe('drag-ended'),
 
   // Persistent store
   getStore: (key, defaultValue) => ipcRenderer.invoke('get-store', key, defaultValue),
   setStore: (key, value) => ipcRenderer.invoke('set-store', key, value),
-
-  // Cleanup helper
-  removeAllListeners: (channel) => ipcRenderer.removeAllListeners(channel),
 })
