@@ -19,7 +19,8 @@ export class Animator {
     this.lastFrameTime = 0
     this.scale = 2           // pixel-art scale factor
     this.flipX = false       // mirror horizontally when facing left
-    this.filter = ''         // CSS filter string, e.g. 'hue-rotate(120deg)'
+    this.filter = ''         // user color tint, e.g. 'hue-rotate(120deg)'
+    this.stateFilter = ''    // mood-driven tint (overheat flush), composed on top
     this.onResize = null     // called when canvas display size changes
     this._rafId = null
     this._onceCallback = null
@@ -144,7 +145,8 @@ export class Animator {
     const dh = Math.round(frame.h * this.scale)
     const g = this.ctx
     g.clearRect(0, 0, dw, dh)
-    g.filter = this.filter || 'none'
+    const filter = [this.filter, this.stateFilter].filter(Boolean).join(' ')
+    g.filter = filter || 'none'
 
     if (this.flipX) {
       g.save()

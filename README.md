@@ -23,16 +23,28 @@ The buddy sits in a transparent, always-on-top window. Clicks pass straight thro
 
 | | You... | The buddy... |
 |---|---|---|
+| <img src="docs/anims/idle.gif" width="56" alt="idle"> | move the cursor anywhere | watches it — faces your cursor and leans toward it |
 | <img src="docs/anims/knead.gif" width="56" alt="knead"> | type at a steady pace | kneads along with you |
-| <img src="docs/anims/overheat.gif" width="56" alt="overheat"> | type furiously (8+ keys/s) | overheats |
+| <img src="docs/anims/overheat.gif" width="56" alt="overheat"> | type furiously (8+ keys/s) | flushes red with **steam puffing** off its head |
 | <img src="docs/anims/hunt.gif" width="56" alt="hunt"> | fling the cursor across the screen | hunts it, facing the direction of travel |
 | <img src="docs/anims/scroll.gif" width="56" alt="scroll"> | scroll | bats at the "paper" |
-| <img src="docs/anims/pet.gif" width="56" alt="pet"> | hover slowly over it | closes its eyes and purrs |
-| <img src="docs/anims/drag.gif" width="56" alt="drag"> | grab it | mochi-stretches while you carry it anywhere |
-| <img src="docs/anims/sleep.gif" width="56" alt="sleep"> | go idle for 3 minutes | curls up and sleeps |
+| <img src="docs/anims/pet.gif" width="56" alt="pet"> | hover slowly over it | closes its eyes, purrs, **hearts float up** |
+| <img src="docs/anims/drag.gif" width="56" alt="drag"> | grab and pull it | **mochi-stretches** along your pull, leans into the motion |
+| <img src="docs/anims/drag.gif" width="56" alt="shake"> | shake it while holding | **wiggles** dizzily |
+| <img src="docs/anims/drag.gif" width="56" alt="release"> | let go | lands with a **springy squash-and-bounce** |
+| <img src="docs/anims/sleep.gif" width="56" alt="sleep"> | go idle for 3 minutes | curls up, breathes slowly, **ZZZ drift up** |
 | <img src="docs/anims/wake.gif" width="56" alt="wake"> | come back | yawns, stretches, back to work |
 
-When you leave it alone, it won't just sit there either — it wanders, yawns, stretches, sits, dances, and plays on its own.
+When you leave it alone, it won't just sit there either — it **walks across its perch**, breathes, yawns, stretches, sits, plays, and dances with **sparkles**.
+
+### Two animation layers
+
+Every reaction above is the product of two independent systems that compose:
+
+1. **Sprite layer** — 15 hand-drawn (or imported) frame animations
+2. **Procedural layer** — spring physics (mochi stretch, wiggle, landing bounce, breathing, cursor-tilt) + a pixel particle engine (steam, ZZZ, hearts, sparkles)
+
+Because the procedural layer is math, not art, **it works on any custom sprite sheet you import** — your buddy gets the full mochi/particle treatment for free.
 
 ## Every animation
 
@@ -46,6 +58,29 @@ When you leave it alone, it won't just sit there either — it wanders, yawns, s
 | `yawn` | `stretch` | `sit` | `dance` | `play` |
 
 > The previews above are rendered from the bundled placeholder sheet by [`scripts/generate-readme-anims.py`](scripts/generate-readme-anims.py) — swap in real art at `assets/sprites/cat.png`, re-run the script, and this gallery updates itself.
+
+## How it compares
+
+Inspired by the lovely [Comnyang](https://comnyang.com/) — and built to go further:
+
+| | Pixe-buudy | Comnyang |
+|---|:---:|:---:|
+| Cursor watching (faces + leans toward cursor) | ✅ | ✅ eyes follow |
+| Typing reactions (knead / overheat + steam) | ✅ | ✅ |
+| Mochi stretch on drag | ✅ physics-driven, stretches along pull | ✅ |
+| Shake → wiggle | ✅ | ✅ |
+| Cursor hunting | ✅ | ✅ |
+| Petting → purr + hearts | ✅ | ✅ |
+| Scroll reaction | ✅ | ✅ |
+| Sleep mode with ZZZ + breathing | ✅ | — |
+| Wanders around on its own | ✅ walks its perch | — |
+| Self-entertaining idle (yawn/stretch/sit/dance/play) | ✅ 5 variants | — |
+| Landing squash-and-bounce on release | ✅ | — |
+| Custom sprite sheets (bring any character) | ✅ any PNG | markings only |
+| Size scaling (1×–6×) | ✅ | — |
+| Full recolor (hue/sat/brightness + presets) | ✅ | — |
+| Open source | ✅ MIT | — |
+| Price | **Free** | $3.90 |
 
 ## Quick start
 

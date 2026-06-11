@@ -2,6 +2,8 @@ import { useEffect, useRef, useCallback } from 'react'
 import { Animator } from './animator.js'
 import { MoodStateMachine, STATES } from './mood.js'
 import { buildSpriteMap, STATE_ROWS } from './sprites.js'
+import { CatPhysics } from './physics.js'
+import { Effects } from './effects.js'
 import { DEFAULT_SETTINGS, normalizeSettings, buildFilter } from '../settings.js'
 
 // Served from the `assets/` public dir (vite publicDir) — relative so it
@@ -14,20 +16,39 @@ const PET_VELOCITY = 80     // px/s over the cat → petting
 const PET_DWELL_MS = 250    // must stay slow this long before purring
 const SCROLL_HOLD_MS = 800
 const IDLE_VARIETY_MS = 45000
+const FACE_DEADZONE_PX = 24 // don't flip when the cursor is basically on the cat
+const SHAKE_WINDOW_MS = 700 // direction reversals inside this window = a shake
+const SHAKE_REVERSALS = 3
+const OVERHEAT_FLUSH = 'saturate(165%) hue-rotate(-25deg) brightness(106%)'
 
 // One-shots the cat picks from when idling
 const IDLE_VARIANTS = [STATES.YAWN, STATES.STRETCH, STATES.SIT, STATES.DANCE, STATES.PLAY]
 
+// Particle emitters per mood state: type + spawn interval
+const EMITTERS = {
+  [STATES.OVERHEAT]: { type: 'steam', everyMs: 240, at: 'head' },
+  [STATES.SLEEP]:    { type: 'zzz', everyMs: 1500, at: 'head' },
+  [STATES.PET]:      { type: 'heart', everyMs: 420, at: 'head' },
+}
+
 export default function Cat() {
   const canvasRef = useRef(null)
+  const wrapRef = useRef(null)
+  const stageRef = useRef(null)
+  const fxRef = useRef(null)
+
   const animRef = useRef(null)
   const moodRef = useRef(null)
+  const physicsRef = useRef(null)
+  const effectsRef = useRef(null)
   const settingsRef = useRef(DEFAULT_SETTINGS)
   const sheetSrcRef = useRef(null)
   const draggingRef = useRef(false)
-  const lastCursorXRef = useRef(null)
+  // Drag pull + shake detection from global cursor deltas while held
+  const dragTrackRef = useRef({ lastX: null, lastY: null, lastDir: 0, reversals: [] })
   // Local hover tracking for pet detection
   const hoverRef = useRef({ lastX: 0, lastY: 0, lastT: 0, slowSince: null })
+  const emitNextRef = useRef(0)
 
   const reportBounds = useCallback(() => {
     const canvas = canvasRef.current
@@ -52,16 +73,51 @@ export default function Cat() {
       const anim = new Animator(canvas, sheet, map)
       anim.setScale(s.scale)
       anim.filter = buildFilter(s)
-      anim.onResize = reportBounds
+      anim.onResize = () => {
+        physicsRef.current?.ensureInBounds(window.innerWidth)
+        reportBounds()
+      }
       anim.start()
       animRef.current = anim
 
+      const physics = new CatPhysics(wrapRef.current, { onMoved: reportBounds })
+      physicsRef.current = physics
+
+      const effects = new Effects(fxRef.current)
+      effectsRef.current = effects
+
       const mood = new MoodStateMachine()
-      mood.onStateChange((state) => anim.setState(state))
+      mood.onStateChange((state) => {
+        anim.setState(state)
+        // Mood side effects on the procedural layers
+        anim.stateFilter = state === STATES.OVERHEAT ? OVERHEAT_FLUSH : ''
+        physics.setBreathing(
+          state === STATES.SLEEP ? 'sleep' : state === STATES.IDLE ? 'idle' : null
+        )
+        if (state === STATES.WALK) {
+          const dir = physics.startWalk(window.innerWidth)
+          anim.setFlip(dir < 0)
+        } else if (physics.walking()) {
+          physics.stopWalk()
+        }
+      })
       moodRef.current = mood
 
+      physics.ensureInBounds(window.innerWidth)
       reportBounds()
       wireSignals(cleanups)
+
+      // One shared rAF for physics, particles, and state emitters
+      let lastTs = performance.now()
+      let rafId = requestAnimationFrame(function loop(ts) {
+        rafId = requestAnimationFrame(loop)
+        const dt = Math.min(0.05, (ts - lastTs) / 1000)
+        lastTs = ts
+        physics.tick(dt)
+        effects.tick(dt)
+        runEmitters(ts)
+      })
+      cleanups.push(() => cancelAnimationFrame(rafId))
 
       // Occasional idle variety: yawn, stretch, sit, dance, play
       const varietyTimer = setInterval(() => {
@@ -80,6 +136,21 @@ export default function Cat() {
           })
         )
       }
+    }
+
+    const runEmitters = (ts) => {
+      const state = moodRef.current?.current
+      const dancing = animRef.current?.state === STATES.DANCE
+      const emitter = EMITTERS[state] || (dancing ? { type: 'sparkle', everyMs: 200 } : null)
+      if (!emitter) return
+      if (ts < emitNextRef.current) return
+      emitNextRef.current = ts + emitter.everyMs
+      const r = canvasRef.current?.getBoundingClientRect()
+      if (!r) return
+      // 'head' = just above the sprite's top center; sparkles use body center
+      const x = r.left + r.width / 2
+      const y = emitter.type === 'sparkle' ? r.top + r.height / 2 : r.top + 2
+      effectsRef.current?.spawn(emitter.type, x, y)
     }
 
     const loadSheet = (s) => {
@@ -144,7 +215,11 @@ export default function Cat() {
     }
     start()
 
-    const onWinResize = () => reportBounds()
+    const onWinResize = () => {
+      effectsRef.current?.resize()
+      physicsRef.current?.ensureInBounds(window.innerWidth)
+      reportBounds()
+    }
     window.addEventListener('resize', onWinResize)
     cleanups.push(() => window.removeEventListener('resize', onWinResize))
 
@@ -155,8 +230,12 @@ export default function Cat() {
       })
       animRef.current?.destroy()
       moodRef.current?.destroy()
+      physicsRef.current?.destroy()
+      effectsRef.current?.destroy()
       animRef.current = null
       moodRef.current = null
+      physicsRef.current = null
+      effectsRef.current = null
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reportBounds])
@@ -166,17 +245,29 @@ export default function Cat() {
     if (!api) return // plain browser: cat still idles, walks, and yawns
 
     cleanups.push(
-      api.onMouseMove(({ x, velocity }) => {
+      api.onMouseMove(({ x, y, velocity }) => {
         const mood = moodRef.current
-        if (!mood || draggingRef.current) return
+        const physics = physicsRef.current
+        if (!mood || !physics) return
+
+        if (draggingRef.current) {
+          trackDrag(x, y)
+          return
+        }
+
+        // Cursor watching: face + lean toward the cursor (Comnyang's
+        // eye-tracking equivalent, but works with any sprite sheet)
+        const r = canvasRef.current?.getBoundingClientRect()
+        if (r && !physics.walking()) {
+          const centerX = window.screenX + r.left + r.width / 2
+          const dx = x - centerX
+          if (Math.abs(dx) > FACE_DEADZONE_PX) animRef.current?.setFlip(dx < 0)
+          physics.setTilt(dx / 60)
+        }
+
         if (velocity > HUNT_VELOCITY) {
-          const prevX = lastCursorXRef.current
-          if (prevX != null && Math.abs(x - prevX) > 2) {
-            animRef.current?.setFlip(x < prevX) // face the cursor's direction
-          }
           mood.setTemporary(STATES.HUNT, HUNT_HOLD_MS)
         }
-        lastCursorXRef.current = x
       })
     )
 
@@ -228,11 +319,48 @@ export default function Cat() {
     // Main ends drags on global mouseup as a backstop
     cleanups.push(
       api.onDragEnded(() => {
-        draggingRef.current = false
-        moodRef.current?.clear(STATES.DRAG)
+        if (draggingRef.current || moodRef.current?.has(STATES.DRAG)) {
+          endLocalDrag()
+        }
         reportBounds()
       })
     )
+  }
+
+  // Mochi stretch + shake detection from global cursor deltas while held
+  function trackDrag(x, y) {
+    const t = dragTrackRef.current
+    if (t.lastX != null) {
+      const dx = x - t.lastX
+      const dy = y - t.lastY
+      physicsRef.current?.setDragPull(dx, dy)
+
+      // Shake: rapid horizontal direction reversals → wiggle
+      const dir = Math.sign(dx)
+      if (dir !== 0 && t.lastDir !== 0 && dir !== t.lastDir && Math.abs(dx) > 3) {
+        const now = Date.now()
+        t.reversals.push(now)
+        while (t.reversals.length && t.reversals[0] < now - SHAKE_WINDOW_MS) t.reversals.shift()
+        if (t.reversals.length >= SHAKE_REVERSALS) {
+          t.reversals.length = 0
+          physicsRef.current?.impulseWiggle()
+        }
+      }
+      if (dir !== 0) t.lastDir = dir
+    }
+    t.lastX = x
+    t.lastY = y
+  }
+
+  function endLocalDrag() {
+    draggingRef.current = false
+    const t = dragTrackRef.current
+    t.lastX = null
+    t.lastY = null
+    t.lastDir = 0
+    t.reversals.length = 0
+    physicsRef.current?.release() // springy landing bounce
+    moodRef.current?.clear(STATES.DRAG)
   }
 
   // ── Pointer handlers on the canvas ─────────────────────────────────────
@@ -286,8 +414,7 @@ export default function Cat() {
 
   const onMouseUp = () => {
     if (!draggingRef.current) return
-    draggingRef.current = false
-    moodRef.current?.clear(STATES.DRAG)
+    endLocalDrag()
     window.electronAPI?.dragEnd()
   }
 
@@ -297,16 +424,21 @@ export default function Cat() {
   }
 
   return (
-    <canvas
-      ref={canvasRef}
-      className="cat-canvas"
-      onMouseMove={onMouseMove}
-      onMouseEnter={onMouseEnter}
-      onMouseLeave={onMouseLeave}
-      onMouseDown={onMouseDown}
-      onMouseUp={onMouseUp}
-      onContextMenu={onContextMenu}
-    />
+    <div className="cat-stage" ref={stageRef}>
+      <canvas ref={fxRef} className="fx-canvas" />
+      <div className="cat-wrap" ref={wrapRef}>
+        <canvas
+          ref={canvasRef}
+          className="cat-canvas"
+          onMouseMove={onMouseMove}
+          onMouseEnter={onMouseEnter}
+          onMouseLeave={onMouseLeave}
+          onMouseDown={onMouseDown}
+          onMouseUp={onMouseUp}
+          onContextMenu={onContextMenu}
+        />
+      </div>
+    </div>
   )
 }
 
