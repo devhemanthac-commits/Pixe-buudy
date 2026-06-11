@@ -11,7 +11,10 @@ async function startAppPolling(onAppChange, intervalMs = 2000) {
     const getActiveWin = mod.default || mod.activeWindow || mod.activeWin
     if (typeof getActiveWin !== 'function') throw new Error('unexpected active-win export shape')
 
+    let inFlight = false
     pollInterval = setInterval(async () => {
+      if (inFlight) return // don't stack calls if the probe is slow
+      inFlight = true
       try {
         const win = await getActiveWin()
         const name = win?.owner?.name || 'unknown'
@@ -21,6 +24,8 @@ async function startAppPolling(onAppChange, intervalMs = 2000) {
         }
       } catch {
         // Permission denied (macOS screen recording) or transient failure — skip tick
+      } finally {
+        inFlight = false
       }
     }, intervalMs)
   } catch (err) {

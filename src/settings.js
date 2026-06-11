@@ -25,16 +25,25 @@ export const COLOR_PRESETS = [
 
 export function normalizeSettings(raw) {
   const s = { ...DEFAULT_SETTINGS, ...(raw || {}) }
-  s.scale = clamp(Number(s.scale) || 2, 1, 6)
-  s.hue = clamp(Number(s.hue) || 0, 0, 360)
-  s.saturate = clamp(Number(s.saturate) ?? 100, 0, 200)
-  s.brightness = clamp(Number(s.brightness) ?? 100, 50, 150)
-  s.frameW = clamp(Math.round(Number(s.frameW) || 32), 8, 128)
-  s.frameH = clamp(Math.round(Number(s.frameH) || 32), 8, 128)
+  s.scale = clamp(num(s.scale, DEFAULT_SETTINGS.scale), 1, 6)
+  s.hue = clamp(num(s.hue, DEFAULT_SETTINGS.hue), 0, 360)
+  s.saturate = clamp(num(s.saturate, DEFAULT_SETTINGS.saturate), 0, 200)
+  s.brightness = clamp(num(s.brightness, DEFAULT_SETTINGS.brightness), 50, 150)
+  s.frameW = clamp(Math.round(num(s.frameW, DEFAULT_SETTINGS.frameW)), 8, 128)
+  s.frameH = clamp(Math.round(num(s.frameH, DEFAULT_SETTINGS.frameH)), 8, 128)
+  s.name = typeof s.name === 'string' ? s.name.slice(0, 24) : DEFAULT_SETTINGS.name
+  s.sound = Boolean(s.sound)
   if (typeof s.customSheet !== 'string' || !s.customSheet.startsWith('data:image/')) {
     s.customSheet = null
   }
   return s
+}
+
+// Number(undefined) is NaN and NaN is not nullish, so `Number(x) ?? d`
+// leaks NaN — always go through a finite check instead.
+function num(v, fallback) {
+  const n = Number(v)
+  return Number.isFinite(n) ? n : fallback
 }
 
 export function buildFilter(s) {

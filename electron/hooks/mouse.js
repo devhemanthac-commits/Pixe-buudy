@@ -1,22 +1,37 @@
-// Global mouse velocity tracking (px/sec), fed by uiohook events in main.js
+// Global mouse velocity tracking, fed by uiohook events in main.js.
+//
+// Velocity is averaged over the IPC send window rather than computed
+// per-event: per-event deltas need a dt floor to avoid divide-by-zero,
+// and that floor under-reports velocity by up to 8x on high-polling-rate
+// (1000Hz+) mice. Accumulating distance and dividing by real elapsed
+// time is rate-independent.
 
 let last = null
+let accumDist = 0
+let windowStart = null
 
-function computeVelocity(x, y) {
+// Call on every raw mouse event
+function addSample(x, y) {
   const now = Date.now()
   if (!last) {
-    last = { x, y, t: now }
-    return 0
+    last = { x, y }
+    windowStart = now
+    return
   }
-  // Floor dt so sub-ms event bursts don't produce absurd spikes
-  const dt = Math.max(8, now - last.t)
-  const v = (Math.hypot(x - last.x, y - last.y) / dt) * 1000
-  last = { x, y, t: now }
-  return v
+  accumDist += Math.hypot(x - last.x, y - last.y)
+  last = { x, y }
+  if (windowStart == null) windowStart = now
 }
 
-function reset() {
-  last = null
+// Call at IPC send time: returns average px/s since the last flush
+function flushVelocity() {
+  const now = Date.now()
+  if (windowStart == null) return 0
+  const elapsed = Math.max(1, now - windowStart)
+  const velocity = (accumDist / elapsed) * 1000
+  accumDist = 0
+  windowStart = now
+  return velocity
 }
 
-module.exports = { computeVelocity, reset }
+module.exports = { addSample, flushVelocity }

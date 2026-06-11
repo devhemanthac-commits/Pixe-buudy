@@ -10,6 +10,7 @@ Output: docs/anims/<state>.gif
 """
 
 import os
+import re
 import sys
 
 try:
@@ -19,29 +20,27 @@ except ImportError:
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SHEET = os.path.join(ROOT, "assets", "sprites", "cat.png")
+SPRITES_JS = os.path.join(ROOT, "src", "cat", "sprites.js")
 OUT_DIR = os.path.join(ROOT, "docs", "anims")
 
 FRAME = 32
 SCALE = 4  # 32px frames -> 128px GIFs
 
-# Keep in sync with STATE_ROWS in src/cat/sprites.js
-STATE_ROWS = [
-    ("idle",     4, 200),
-    ("walk",     6, 100),
-    ("knead",    4, 150),
-    ("overheat", 4, 80),
-    ("sleep",    3, 400),
-    ("wake",     5, 120),
-    ("pet",      3, 200),
-    ("hunt",     4, 80),
-    ("drag",     3, 100),
-    ("scroll",   3, 100),
-    ("yawn",     5, 150),
-    ("stretch",  6, 140),
-    ("sit",      4, 250),
-    ("dance",    6, 110),
-    ("play",     5, 100),
-]
+
+def load_state_rows():
+    """Parse STATE_ROWS from sprites.js — single source of truth, no drift."""
+    with open(SPRITES_JS, encoding="utf-8") as f:
+        js = f.read()
+    block = re.search(r"export const STATE_ROWS = \[(.*?)\n\]", js, re.S)
+    if not block:
+        sys.exit(f"STATE_ROWS not found in {SPRITES_JS}")
+    rows = re.findall(r"\['(\w+)',\s*(\d+),\s*(\d+)\]", block.group(1))
+    if not rows:
+        sys.exit(f"could not parse any rows from STATE_ROWS in {SPRITES_JS}")
+    return [(name, int(count), int(duration)) for name, count, duration in rows]
+
+
+STATE_ROWS = load_state_rows()
 
 TRANSPARENT_INDEX = 255
 

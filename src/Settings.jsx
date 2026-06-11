@@ -7,11 +7,17 @@ import {
   MAX_SHEET_BYTES,
 } from './settings.js'
 
+const SEND_THROTTLE_MS = 100
+
 export default function Settings() {
   const [settings, setSettings] = useState(DEFAULT_SETTINGS)
   const [loaded, setLoaded] = useState(false)
   const [fileError, setFileError] = useState(null)
   const fileInputRef = useRef(null)
+  // Leading+trailing throttle for IPC sends: slider drags fire at ~60Hz
+  // and each send carries the whole settings object (incl. a possibly
+  // large custom-sheet dataURL)
+  const sendRef = useRef({ timer: null, lastSent: 0, latest: null })
 
   useEffect(() => {
     let cancelled = false
@@ -27,13 +33,27 @@ export default function Settings() {
     })()
     return () => {
       cancelled = true
+      if (sendRef.current.timer) clearTimeout(sendRef.current.timer)
     }
   }, [])
 
   const update = (patch) => {
     const next = normalizeSettings({ ...settings, ...patch })
     setSettings(next)
-    window.electronAPI?.updateSettings(next)
+
+    const s = sendRef.current
+    s.latest = next
+    const sendNow = () => {
+      s.lastSent = Date.now()
+      s.timer = null
+      window.electronAPI?.updateSettings(s.latest)
+    }
+    const elapsed = Date.now() - s.lastSent
+    if (elapsed >= SEND_THROTTLE_MS) {
+      sendNow()
+    } else if (!s.timer) {
+      s.timer = setTimeout(sendNow, SEND_THROTTLE_MS - elapsed)
+    }
   }
 
   const onFile = (e) => {

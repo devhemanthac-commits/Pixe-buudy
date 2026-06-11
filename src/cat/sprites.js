@@ -53,8 +53,3 @@ export function buildSpriteMap({
 
   return { sprites, durations }
 }
-
-// Default map for the bundled sheet
-const def = buildSpriteMap()
-export const SPRITES = def.sprites
-export const FRAME_DURATION = def.durations

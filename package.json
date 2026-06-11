@@ -19,10 +19,9 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "active-win": "^8.1.0",
     "electron-store": "^8.1.0",
-    "howler": "^2.2.4",
-    "uiohook-napi": "^1.5.3",
-    "active-win": "^8.1.0"
+    "uiohook-napi": "^1.5.3"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.2.1",

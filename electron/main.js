@@ -2,7 +2,7 @@ const { app, BrowserWindow, ipcMain, screen, powerMonitor } = require('electron'
 const path = require('path')
 const Store = require('electron-store')
 
-const { computeVelocity } = require('./hooks/mouse')
+const { addSample, flushVelocity } = require('./hooks/mouse')
 const { recordKeypress, currentRate } = require('./hooks/keyboard')
 const { startAppPolling, stopAppPolling } = require('./hooks/system')
 
@@ -30,6 +30,12 @@ let catBounds = { x: 0, y: 0, width: 0, height: 0 }
 
 // Active drag: cursor offset inside the window when the grab started
 let dragState = null
+
+// Global mouse button state (uiohook). Guards against a race where a
+// fast click's global mouseup is processed before the renderer's
+// drag-start IPC arrives — accepting that stale drag-start would glue
+// the window to the cursor with the button already released.
+let mouseButtonDown = false
 
 const intervals = []
 
@@ -228,10 +234,11 @@ function startHitTestLoop() {
       const lx = cursor.x - winX
       const ly = cursor.y - winY
       const b = catBounds
+      // Right/bottom edges are exclusive: a w-px box spans [x, x+w)
       const over =
         b.width > 0 &&
-        lx >= b.x && lx <= b.x + b.width &&
-        ly >= b.y && ly <= b.y + b.height
+        lx >= b.x && lx < b.x + b.width &&
+        ly >= b.y && ly < b.y + b.height
 
       if (over && !mouseEventsEnabled) {
         mainWindow.setIgnoreMouseEvents(false)
@@ -262,24 +269,25 @@ function startInputHooks() {
     return
   }
 
-  // Mouse movement → throttled IPC with peak velocity over the window
+  // Mouse movement → throttled IPC with distance-averaged velocity
   let lastMouseSend = 0
-  let peakVelocity = 0
   const onMove = (e) => {
-    const velocity = computeVelocity(e.x, e.y)
-    if (velocity > peakVelocity) peakVelocity = velocity
+    addSample(e.x, e.y)
     const now = Date.now()
     if (now - lastMouseSend >= MOUSE_SEND_MS) {
       lastMouseSend = now
-      safeSend('mouse-move', { x: e.x, y: e.y, velocity: peakVelocity })
-      peakVelocity = 0
+      safeSend('mouse-move', { x: e.x, y: e.y, velocity: flushVelocity() })
     }
   }
   uIOhook.on('mousemove', onMove)
   uIOhook.on('mousedrag', onMove) // button held — separate event in uiohook
 
-  uIOhook.on('mousedown', (e) => safeSend('mouse-down', { button: e.button }))
+  uIOhook.on('mousedown', (e) => {
+    mouseButtonDown = true
+    safeSend('mouse-down', { button: e.button })
+  })
   uIOhook.on('mouseup', (e) => {
+    mouseButtonDown = false
     safeSend('mouse-up', { button: e.button })
     endDrag() // backstop: never leave the window glued to the cursor
   })
@@ -289,8 +297,18 @@ function startInputHooks() {
   uIOhook.on('wheel', onWheel)
   uIOhook.on('scroll', onWheel)
 
-  uIOhook.on('keydown', () => {
+  // Dedupe OS key-repeat: holding one key fires keydown ~20x/sec, which
+  // would fake an instant overheat. Count a key once until its keyup.
+  const downKeys = new Set()
+  uIOhook.on('keydown', (e) => {
+    if (e.keycode != null) {
+      if (downKeys.has(e.keycode)) return
+      downKeys.add(e.keycode)
+    }
     recordKeypress()
+  })
+  uIOhook.on('keyup', (e) => {
+    if (e.keycode != null) downKeys.delete(e.keycode)
   })
 
   // Broadcast rate on an interval so it decays to 0 when typing stops
@@ -338,6 +356,10 @@ ipcMain.on('cat-bounds', (_event, b) => {
 
 ipcMain.on('drag-start', (_event, o) => {
   if (!o || !Number.isFinite(o.offsetX) || !Number.isFinite(o.offsetY)) return
+  // Stale drag-start: the button was already released globally while this
+  // IPC was in flight (fast click). Accepting it would stick the window
+  // to the cursor. Only enforceable when uiohook is tracking the button.
+  if (uiohookStarted && !mouseButtonDown) return
   dragState = { offsetX: o.offsetX, offsetY: o.offsetY }
 })
 
@@ -353,12 +375,28 @@ ipcMain.handle('set-store', (_event, key, value) => {
   store.set(key, value)
 })
 
-// Settings window pushes the whole settings object; persist it and
-// broadcast to the cat window so changes apply live
+// Settings window pushes the whole settings object; broadcast to the cat
+// window immediately (live feel) but debounce the disk write — slider
+// drags arrive at tens of updates/sec and the object can carry a
+// multi-hundred-KB custom sprite dataURL.
+let settingsSaveTimer = null
+let pendingSettings = null
+
+function flushPendingSettings() {
+  if (settingsSaveTimer) clearTimeout(settingsSaveTimer)
+  settingsSaveTimer = null
+  if (pendingSettings) {
+    store.set('settings', pendingSettings)
+    pendingSettings = null
+  }
+}
+
 ipcMain.on('settings-updated', (_event, settings) => {
   if (!settings || typeof settings !== 'object') return
-  store.set('settings', settings)
+  pendingSettings = settings
   safeSend('settings-changed', settings)
+  clearTimeout(settingsSaveTimer)
+  settingsSaveTimer = setTimeout(flushPendingSettings, 400)
 })
 
 ipcMain.on('open-settings', () => openSettingsWindow())
@@ -402,6 +440,7 @@ app.on('window-all-closed', () => {
 })
 
 app.on('will-quit', () => {
+  flushPendingSettings() // don't lose the last settings edit on quit
   intervals.forEach(clearInterval)
   intervals.length = 0
   stopAppPolling()

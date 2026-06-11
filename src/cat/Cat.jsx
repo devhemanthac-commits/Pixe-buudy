@@ -82,20 +82,21 @@ export default function Cat() {
       }
     }
 
-    const loadSheet = (s, isInit) => {
+    const loadSheet = (s) => {
       const src = s.customSheet || SPRITE_URL
       sheetSrcRef.current = src
 
       const useSheet = (sheet, w, h) => {
         if (disposed || sheetSrcRef.current !== src) return // stale load
         const map = buildSpriteMap({
-          frameW: s.customSheet ? s.frameW : 32,
-          frameH: s.customSheet ? s.frameH : 32,
+          // undefined → buildSpriteMap's defaults for the bundled sheet
+          frameW: s.customSheet ? s.frameW : undefined,
+          frameH: s.customSheet ? s.frameH : undefined,
           sheetW: w,
           sheetH: h,
         })
-        if (isInit && !animRef.current) initAnim(sheet, map, s)
-        else animRef.current?.setSheet(sheet, map)
+        if (!animRef.current) initAnim(sheet, map, s)
+        else animRef.current.setSheet(sheet, map)
       }
 
       const img = new Image()
@@ -103,11 +104,15 @@ export default function Cat() {
       img.onerror = () => {
         if (disposed) return
         console.warn('[pixe-buudy] sprite sheet failed to load, using fallback art')
+        const stale = sheetSrcRef.current !== src
+        // A stale failure must still init if nothing rendered yet —
+        // otherwise two failed loads in a row leave the cat blank forever.
+        // (A later successful load self-heals via setSheet.)
+        if (stale && animRef.current) return
         const fb = makeFallbackSheet()
-        if (sheetSrcRef.current !== src) return
         const map = buildSpriteMap({ sheetW: fb.width, sheetH: fb.height })
-        if (isInit && !animRef.current) initAnim(fb, map, s)
-        else animRef.current?.setSheet(fb, map)
+        if (!animRef.current) initAnim(fb, map, s)
+        else animRef.current.setSheet(fb, map)
       }
       img.src = src
     }
@@ -121,7 +126,7 @@ export default function Cat() {
       anim.filter = buildFilter(s)
       const src = s.customSheet || SPRITE_URL
       if (src !== sheetSrcRef.current || s.frameW !== prev.frameW || s.frameH !== prev.frameH) {
-        loadSheet(s, false)
+        loadSheet(s)
       }
     }
 
@@ -129,11 +134,13 @@ export default function Cat() {
       let stored = null
       try {
         stored = await window.electronAPI?.getStore('settings', null)
-      } catch {}
+      } catch (err) {
+        console.warn('[pixe-buudy] could not load settings, using defaults:', err)
+      }
       if (disposed) return
       const s = normalizeSettings(stored)
       settingsRef.current = s
-      loadSheet(s, true)
+      loadSheet(s)
     }
     start()
 
@@ -229,6 +236,10 @@ export default function Cat() {
   }
 
   // ── Pointer handlers on the canvas ─────────────────────────────────────
+  // Pet detection uses local per-event velocity (DOM events arrive at most
+  // ~60Hz, so the dt floor is safe here). Global cursor velocity for HUNT
+  // is computed separately in electron/hooks/mouse.js, which must handle
+  // 1000Hz+ mice — don't unify the two without keeping that property.
   const onMouseMove = (e) => {
     const h = hoverRef.current
     const now = performance.now()
