@@ -1,40 +1,103 @@
-# Pixe-buudy 🐱
+<div align="center">
 
-A pixel cat that lives on your desktop and reacts to what you do — typing, scrolling, flinging the mouse around, or wandering off for coffee.
+# Pixe-buudy
 
-The cat sits in a transparent, always-on-top window. Clicks pass straight through to whatever's underneath, except when your cursor is over the cat itself.
+<img src="docs/anims/dance.gif" width="96" alt="Pixe-buudy dancing">
 
-## Reactions
+**A pixel cat that lives on your desktop and reacts to everything you do.**
 
-| You... | The cat... |
-|---|---|
-| type at a steady pace | kneads along |
-| type furiously (8+ keys/s) | overheats |
-| fling the cursor | hunts it, facing the direction of travel |
-| scroll | bats at the "paper" |
-| hover slowly over it | gets pets, purrs |
-| grab it | mochi-stretches while you drag it anywhere |
-| go idle for 3 min | curls up and sleeps |
-| come back | yawn → stretch → back to work |
+Typing, scrolling, flinging the mouse around, wandering off for coffee — the buddy notices.
 
-## Getting started
+[![License: MIT](https://img.shields.io/badge/License-MIT-a29bfe.svg)](LICENSE)
+[![Electron](https://img.shields.io/badge/Electron-28-47848F?logo=electron&logoColor=white)](https://www.electronjs.org/)
+[![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)](https://react.dev/)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-81ecec.svg)](#contributing)
+
+</div>
+
+---
+
+The buddy sits in a transparent, always-on-top window. Clicks pass straight through to whatever's underneath — except when your cursor is over the buddy itself. Drag it anywhere, pet it, recolor it, resize it, or replace it with your own sprite sheet entirely.
+
+## How it reacts
+
+| | You... | The buddy... |
+|---|---|---|
+| <img src="docs/anims/knead.gif" width="56" alt="knead"> | type at a steady pace | kneads along with you |
+| <img src="docs/anims/overheat.gif" width="56" alt="overheat"> | type furiously (8+ keys/s) | overheats |
+| <img src="docs/anims/hunt.gif" width="56" alt="hunt"> | fling the cursor across the screen | hunts it, facing the direction of travel |
+| <img src="docs/anims/scroll.gif" width="56" alt="scroll"> | scroll | bats at the "paper" |
+| <img src="docs/anims/pet.gif" width="56" alt="pet"> | hover slowly over it | closes its eyes and purrs |
+| <img src="docs/anims/drag.gif" width="56" alt="drag"> | grab it | mochi-stretches while you carry it anywhere |
+| <img src="docs/anims/sleep.gif" width="56" alt="sleep"> | go idle for 3 minutes | curls up and sleeps |
+| <img src="docs/anims/wake.gif" width="56" alt="wake"> | come back | yawns, stretches, back to work |
+
+When you leave it alone, it won't just sit there either — it wanders, yawns, stretches, sits, dances, and plays on its own.
+
+## Every animation
+
+| | | | | |
+|:---:|:---:|:---:|:---:|:---:|
+| <img src="docs/anims/idle.gif" width="80" alt="idle"> | <img src="docs/anims/walk.gif" width="80" alt="walk"> | <img src="docs/anims/knead.gif" width="80" alt="knead"> | <img src="docs/anims/overheat.gif" width="80" alt="overheat"> | <img src="docs/anims/sleep.gif" width="80" alt="sleep"> |
+| `idle` | `walk` | `knead` | `overheat` | `sleep` |
+| <img src="docs/anims/wake.gif" width="80" alt="wake"> | <img src="docs/anims/pet.gif" width="80" alt="pet"> | <img src="docs/anims/hunt.gif" width="80" alt="hunt"> | <img src="docs/anims/drag.gif" width="80" alt="drag"> | <img src="docs/anims/scroll.gif" width="80" alt="scroll"> |
+| `wake` | `pet` | `hunt` | `drag` | `scroll` |
+| <img src="docs/anims/yawn.gif" width="80" alt="yawn"> | <img src="docs/anims/stretch.gif" width="80" alt="stretch"> | <img src="docs/anims/sit.gif" width="80" alt="sit"> | <img src="docs/anims/dance.gif" width="80" alt="dance"> | <img src="docs/anims/play.gif" width="80" alt="play"> |
+| `yawn` | `stretch` | `sit` | `dance` | `play` |
+
+> The previews above are rendered from the bundled placeholder sheet by [`scripts/generate-readme-anims.py`](scripts/generate-readme-anims.py) — swap in real art at `assets/sprites/cat.png`, re-run the script, and this gallery updates itself.
+
+## Quick start
 
 ```bash
+git clone https://github.com/devhemanthac-commits/Pixe-buudy.git
+cd Pixe-buudy
 npm install
-npm run dev      # Vite dev server + Electron with hot reload
+npm run dev      # Vite dev server + Electron, hot reload
 ```
 
 Production build:
 
 ```bash
-npm run build    # outputs installers to dist-electron/
+npm run build    # installers land in dist-electron/
 ```
 
 ### Platform notes
 
-- **macOS** — global input hooks need Accessibility permission (System Settings → Privacy & Security → Accessibility). App-awareness needs Screen Recording permission.
-- **Linux** — transparency requires a compositor (picom, KWin, Mutter all work).
-- **Wayland** — global hooks via uiohook may be limited; X11 sessions work fully.
+| Platform | Notes |
+|---|---|
+| **macOS** | Global input hooks need Accessibility permission (System Settings → Privacy & Security → Accessibility). App-awareness needs Screen Recording permission. |
+| **Windows** | Works out of the box. |
+| **Linux** | Transparency requires a compositor (picom, KWin, and Mutter all work). Wayland limits global hooks — X11 sessions get the full experience. |
+
+## Customization
+
+Right-click the buddy → **Settings**:
+
+| | |
+|---|---|
+| 🔍 **Size** | 1×–6× pixel scale, applied live — click detection adjusts automatically |
+| 🎨 **Color** | Preset coats (Ginger, Sky, Sakura, Mint, Grape, Ash) or fine-tune hue / saturation / brightness with a live preview |
+| 🐾 **Custom buddy** | Import your own sprite sheet (PNG, ≤2MB, any frame size) — persisted across restarts |
+| ✏️ **Name** | Used in reminder messages |
+| 🔊 **Sound** | Meow / purr toggle |
+
+### Bring your own buddy
+
+One row per animation, frames left to right:
+
+```
+idle, walk, knead, overheat, sleep, wake, pet, hunt,
+drag, scroll, yawn, stretch, sit, dance, play
+```
+
+The loader is forgiving by design:
+
+- **Fewer than 15 rows?** Missing states fall back to the idle row.
+- **Narrower sheet?** Frame counts cap to what actually fits.
+- **Different frame size?** Set it in Settings (default 32×32).
+
+Row definitions live in [`src/cat/sprites.js`](src/cat/sprites.js).
 
 ## Architecture
 
@@ -47,38 +110,42 @@ src/
   cat/
     Cat.jsx      wires IPC signals → mood machine → animator
     mood.js      priority-resolved state machine with temporary flags
-    animator.js  rAF canvas renderer, DPR-aware, resize-free draw loop
-    sprites.js   sprite sheet frame map
+    animator.js  rAF canvas renderer — DPR-aware, resize-free, tint + hot sheet swap
+    sprites.js   sprite sheet frame maps (adapts to any sheet)
+  Settings.jsx   settings window UI (live-syncs to the cat window)
 assets/sprites/  sprite sheets (vite publicDir, served at web root)
 ```
 
-Key design points:
+### Design notes
 
-- **Click-through windows**: `setIgnoreMouseEvents(true, { forward: true })` by default; a 16ms hit-test loop in the main process re-enables mouse events only while the cursor is inside the cat's reported bounds.
-- **Drag**: the renderer reports the grab offset; the main process moves the window with the global cursor each tick, with a global-mouseup backstop so the window can never get stuck to the cursor.
-- **Steady reactions**: IPC is throttled (mouse ~30Hz, typing rate every 250ms on change), thresholds use hysteresis bands so states don't flicker, and idle/sleep is driven by `powerMonitor` in the main process so it survives renderer reloads.
-- **Crash-proofing**: single-instance lock, renderer crash auto-reload with loop detection, uncaught-exception guards, and a procedural fallback sprite sheet so the cat renders even with missing assets.
+- **Click-through window** — `setIgnoreMouseEvents(true, { forward: true })` by default; a 16ms hit-test loop in the main process re-enables mouse events only while the cursor is inside the buddy's reported bounds.
+- **Drag that can't get stuck** — the renderer reports the grab offset, the main process moves the window with the global cursor each tick, and a global-mouseup backstop guarantees release.
+- **Mood priority resolution** — `DRAG > PET > OVERHEAT > HUNT > KNEAD > SCROLL > WALK > IDLE > SLEEP`; signals set/clear flags and the machine resolves the winner, so reactions never fight.
+- **Steady, not jittery** — IPC throttled (mouse ~30Hz, typing rate on change every 250ms), hysteresis bands on typing thresholds, idle/sleep driven by `powerMonitor` in the main process.
+- **Crash-proof** — single-instance lock, renderer crash auto-reload with loop detection, uncaught-exception guards, and a procedural fallback sprite so the buddy renders even with zero assets.
 
-## Customization
+## Roadmap
 
-Right-click the cat → Settings:
+- [x] Transparent click-through window with hit-testing
+- [x] Sprite animator + mood state machine
+- [x] Global input reactions (typing, scrolling, cursor, idle)
+- [x] Custom buddies, size, and color
+- [ ] Persistent mood score & XP / level system
+- [ ] App awareness (focused face in your editor, bobbing to music)
+- [ ] Pomodoro timer + stretch reminders
+- [ ] Sounds (meow, purr, level-up)
+- [ ] Auto-launch on startup & auto-updates
 
-- **Size** — 1× to 6× pixel scale, applied live
-- **Color** — preset swatches (Ginger, Sky, Sakura, Mint, Grape, Ash) or fine-tune hue/saturation/brightness sliders
-- **Custom buddy** — import your own sprite sheet (PNG, up to 2MB) with configurable frame size; it's stored persistently and survives restarts
-- **Name** — used in reminder messages (Pomodoro/stretch phases)
+## Contributing
 
-### Sprite sheet format
+Issues and PRs welcome. The codebase is small and commented — `electron/main.js` and `src/cat/Cat.jsx` are the two files that explain everything else.
 
-One row per animation, frames left to right, in this order:
-
+```bash
+npm run dev          # hack with hot reload
+npm run build:web    # verify the renderer builds
+python3 scripts/generate-readme-anims.py   # regenerate the README gallery
 ```
-idle, walk, knead, overheat, sleep, wake, pet, hunt,
-drag, scroll, yawn, stretch, sit, dance, play
-```
-
-Default frame size is 32×32 (configurable for imported sheets in Settings). Sheets with fewer rows than 15 are fine — missing rows fall back to the idle animation. Frame counts per row are capped to what fits the sheet width, so narrower sheets also work. The bundled sheet lives at `assets/sprites/cat.png`; row definitions are in `src/cat/sprites.js`.
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE) — do whatever makes your desktop happier.
