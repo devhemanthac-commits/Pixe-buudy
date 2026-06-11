@@ -4,51 +4,66 @@ import { MoodStateMachine, STATES } from './mood.js'
 import { buildSpriteMap, STATE_ROWS } from './sprites.js'
 import { CatPhysics } from './physics.js'
 import { Effects } from './effects.js'
+import { XpSystem } from './xp.js'
+import {
+  playMeow, playPurr, playSteam, playBounce, playLevelUp, playWake, playChime,
+} from './sound.js'
 import { DEFAULT_SETTINGS, normalizeSettings, buildFilter } from '../settings.js'
 
-// Served from the `assets/` public dir (vite publicDir) — relative so it
-// works both on the dev server and from file:// in the packaged app.
 const SPRITE_URL = 'sprites/cat.png'
 
-const HUNT_VELOCITY = 450   // px/s of global cursor speed → hunt
-const HUNT_HOLD_MS = 900
-const PET_VELOCITY = 80     // px/s over the cat → petting
-const PET_DWELL_MS = 250    // must stay slow this long before purring
+const HUNT_VELOCITY  = 450
+const HUNT_HOLD_MS   = 900
+const PET_VELOCITY   = 80
+const PET_DWELL_MS   = 250
 const SCROLL_HOLD_MS = 800
 const IDLE_VARIETY_MS = 45000
-const FACE_DEADZONE_PX = 24 // don't flip when the cursor is basically on the cat
-const SHAKE_WINDOW_MS = 700 // direction reversals inside this window = a shake
-const SHAKE_REVERSALS = 3
-const OVERHEAT_FLUSH = 'saturate(165%) hue-rotate(-25deg) brightness(106%)'
+const FACE_DEADZONE_PX = 24
+const SHAKE_WINDOW_MS  = 700
+const SHAKE_REVERSALS  = 3
+const OVERHEAT_FLUSH   = 'saturate(165%) hue-rotate(-25deg) brightness(106%)'
 
-// One-shots the cat picks from when idling
+// Time typing must be continuous before the stretch reminder fires
+const STRETCH_WARN_MS = 25 * 60 * 1000  // 25 minutes
+// Gap in typing that resets the session clock
+const STRETCH_BREAK_MS = 5 * 60 * 1000// 5 minutes gap = new session
+
 const IDLE_VARIANTS = [STATES.YAWN, STATES.STRETCH, STATES.SIT, STATES.DANCE, STATES.PLAY]
 
-// Particle emitters per mood state: type + spawn interval
+// Idle variants biased by active app context
+const APP_VARIANTS = {
+  code:    [STATES.SIT, STATES.SIT, STATES.YAWN, STATES.STRETCH, STATES.PLAY],
+  media:   [STATES.DANCE, STATES.DANCE, STATES.PLAY, STATES.YAWN, STATES.SIT],
+  reading: [STATES.YAWN, STATES.YAWN, STATES.SIT, STATES.STRETCH, STATES.PLAY],
+  default: IDLE_VARIANTS,
+}
+
 const EMITTERS = {
-  [STATES.OVERHEAT]: { type: 'steam', everyMs: 240, at: 'head' },
-  [STATES.SLEEP]:    { type: 'zzz', everyMs: 1500, at: 'head' },
-  [STATES.PET]:      { type: 'heart', everyMs: 420, at: 'head' },
+  [STATES.OVERHEAT]: { type: 'steam',   everyMs: 260, at: 'head' },
+  [STATES.SLEEP]:    { type: 'zzz',     everyMs: 1500 },
+  [STATES.PET]:      { type: 'heart',   everyMs: 450 },
 }
 
 export default function Cat() {
-  const canvasRef = useRef(null)
-  const wrapRef = useRef(null)
-  const stageRef = useRef(null)
-  const fxRef = useRef(null)
+  const canvasRef    = useRef(null)
+  const wrapRef      = useRef(null)
+  const stageRef     = useRef(null)
+  const fxRef        = useRef(null)
+  const stretchTipRef = useRef(null)
 
-  const animRef = useRef(null)
-  const moodRef = useRef(null)
-  const physicsRef = useRef(null)
-  const effectsRef = useRef(null)
-  const settingsRef = useRef(DEFAULT_SETTINGS)
-  const sheetSrcRef = useRef(null)
-  const draggingRef = useRef(false)
-  // Drag pull + shake detection from global cursor deltas while held
+  const animRef     = useRef(null)
+  const moodRef     = useRef(null)
+  const physicsRef  = useRef(null)
+  const effectsRef  = useRef(null)
+  const xpRef       = useRef(null)
+
+  const settingsRef  = useRef(DEFAULT_SETTINGS)
+  const sheetSrcRef  = useRef(null)
+  const draggingRef  = useRef(false)
   const dragTrackRef = useRef({ lastX: null, lastY: null, lastDir: 0, reversals: [] })
-  // Local hover tracking for pet detection
-  const hoverRef = useRef({ lastX: 0, lastY: 0, lastT: 0, slowSince: null })
-  const emitNextRef = useRef(0)
+  const hoverRef     = useRef({ lastX: 0, lastY: 0, lastT: 0, slowSince: null })
+  const emitNextRef  = useRef(0)
+  const appContextRef = useRef('default') // 'code'|'media'|'reading'|'default'
 
   const reportBounds = useCallback(() => {
     const canvas = canvasRef.current
@@ -86,10 +101,27 @@ export default function Cat() {
       const effects = new Effects(fxRef.current)
       effectsRef.current = effects
 
+      // XP system: level-up triggers sparkle burst + arpeggio
+      const xp = new XpSystem((newLevel) => {
+        const r = canvasRef.current?.getBoundingClientRect()
+        if (r) effects.burst(r.left + r.width / 2, r.top + r.height / 2)
+        if (settingsRef.current.sound) playLevelUp()
+      })
+      xpRef.current = xp
+      xp.load()  // fire-and-forget async load from store
+
+      // ── Mood state machine ─────────────────────────────────────────────
+      let prevMoodState = STATES.IDLE
+      // Name tip overlay: fades in when petting, out when not
+      let nameTipAlpha = 0
+      let nameTipTarget = 0
+
       const mood = new MoodStateMachine()
       mood.onStateChange((state) => {
+        const prev = prevMoodState
+        prevMoodState = state
+
         anim.setState(state)
-        // Mood side effects on the procedural layers
         anim.stateFilter = state === STATES.OVERHEAT ? OVERHEAT_FLUSH : ''
         physics.setBreathing(
           state === STATES.SLEEP ? 'sleep' : state === STATES.IDLE ? 'idle' : null
@@ -100,6 +132,23 @@ export default function Cat() {
         } else if (physics.walking()) {
           physics.stopWalk()
         }
+
+        // ── Sounds ───────────────────────────────────────────────────────
+        const sound = settingsRef.current.sound
+        if (sound) {
+          if (state === STATES.PET && prev !== STATES.PET)           playPurr()
+          if (state === STATES.OVERHEAT && prev !== STATES.OVERHEAT) playSteam()
+          if (prev === STATES.DRAG && state !== STATES.DRAG)         playBounce()
+        }
+
+        // ── XP awards ────────────────────────────────────────────────────
+        if (state === STATES.PET      && prev !== STATES.PET)      xp.award('pet')
+        if (state === STATES.OVERHEAT && prev !== STATES.OVERHEAT) xp.award('overheat')
+        if (state === STATES.KNEAD    && prev !== STATES.KNEAD)    xp.award('knead')
+        if (prev  === STATES.DRAG     && state !== STATES.DRAG)    xp.award('drag')
+
+        // ── Name tip ─────────────────────────────────────────────────────
+        nameTipTarget = state === STATES.PET ? 1 : 0
       })
       moodRef.current = mood
 
@@ -107,28 +156,57 @@ export default function Cat() {
       reportBounds()
       wireSignals(cleanups)
 
-      // One shared rAF for physics, particles, and state emitters
+      // ── Shared rAF: physics + particles + overlays ─────────────────────
       let lastTs = performance.now()
       let rafId = requestAnimationFrame(function loop(ts) {
         rafId = requestAnimationFrame(loop)
         const dt = Math.min(0.05, (ts - lastTs) / 1000)
         lastTs = ts
+
         physics.tick(dt)
         effects.tick(dt)
         runEmitters(ts)
+
+        // Smooth name-tip alpha
+        nameTipAlpha += (nameTipTarget - nameTipAlpha) * Math.min(1, dt * 7)
+
+        // Update canvas overlay every frame
+        const r = canvasRef.current?.getBoundingClientRect()
+        if (r) {
+          effects.setOverlay({
+            nameTip: {
+              visible: nameTipAlpha > 0.01,
+              text: settingsRef.current.name || 'Buddy',
+              x: r.left + r.width / 2,
+              y: r.top - 4,
+              alpha: nameTipAlpha,
+            },
+            levelBadge: xp.level > 0 ? {
+              visible: true,
+              text: xp.label(),
+              x: r.right + 2,
+              y: r.top + 2,
+            } : null,
+          })
+        }
       })
       cleanups.push(() => cancelAnimationFrame(rafId))
 
-      // Occasional idle variety: yawn, stretch, sit, dance, play
+      // ── Idle variety: biased by app context ───────────────────────────
       const varietyTimer = setInterval(() => {
-        if (moodRef.current?.current === STATES.IDLE && Math.random() < 0.6) {
-          const pick = IDLE_VARIANTS[Math.floor(Math.random() * IDLE_VARIANTS.length)]
-          animRef.current?.playOnce(pick, STATES.IDLE)
+        if (moodRef.current?.current !== STATES.IDLE) return
+        if (Math.random() > 0.58) return
+        const variants = APP_VARIANTS[appContextRef.current] || IDLE_VARIANTS
+        const pick = variants[Math.floor(Math.random() * variants.length)]
+        animRef.current?.playOnce(pick, STATES.IDLE)
+        if (pick === STATES.DANCE) {
+          xp.award('dance')
+          if (settingsRef.current.sound) playMeow()
         }
       }, IDLE_VARIETY_MS)
       cleanups.push(() => clearInterval(varietyTimer))
 
-      // Live settings updates from the settings window
+      // Live settings from the settings window
       if (window.electronAPI) {
         cleanups.push(
           window.electronAPI.onSettingsChanged((raw) => {
@@ -147,7 +225,6 @@ export default function Cat() {
       emitNextRef.current = ts + emitter.everyMs
       const r = canvasRef.current?.getBoundingClientRect()
       if (!r) return
-      // 'head' = just above the sprite's top center; sparkles use body center
       const x = r.left + r.width / 2
       const y = emitter.type === 'sparkle' ? r.top + r.height / 2 : r.top + 2
       effectsRef.current?.spawn(emitter.type, x, y)
@@ -158,9 +235,8 @@ export default function Cat() {
       sheetSrcRef.current = src
 
       const useSheet = (sheet, w, h) => {
-        if (disposed || sheetSrcRef.current !== src) return // stale load
+        if (disposed || sheetSrcRef.current !== src) return
         const map = buildSpriteMap({
-          // undefined → buildSpriteMap's defaults for the bundled sheet
           frameW: s.customSheet ? s.frameW : undefined,
           frameH: s.customSheet ? s.frameH : undefined,
           sheetW: w,
@@ -176,9 +252,6 @@ export default function Cat() {
         if (disposed) return
         console.warn('[pixe-buudy] sprite sheet failed to load, using fallback art')
         const stale = sheetSrcRef.current !== src
-        // A stale failure must still init if nothing rendered yet —
-        // otherwise two failed loads in a row leave the cat blank forever.
-        // (A later successful load self-heals via setSheet.)
         if (stale && animRef.current) return
         const fb = makeFallbackSheet()
         const map = buildSpriteMap({ sheetW: fb.width, sheetH: fb.height })
@@ -225,9 +298,7 @@ export default function Cat() {
 
     return () => {
       disposed = true
-      cleanups.forEach((fn) => {
-        try { fn() } catch {}
-      })
+      cleanups.forEach((fn) => { try { fn() } catch {} })
       animRef.current?.destroy()
       moodRef.current?.destroy()
       physicsRef.current?.destroy()
@@ -236,13 +307,52 @@ export default function Cat() {
       moodRef.current = null
       physicsRef.current = null
       effectsRef.current = null
+      xpRef.current = null
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reportBounds])
 
+  // ── IPC signal wiring ─────────────────────────────────────────────────────
   function wireSignals(cleanups) {
     const api = window.electronAPI
-    if (!api) return // plain browser: cat still idles, walks, and yawns
+    if (!api) return
+
+    // Stretch reminder: track continuous typing time
+    let lastTypingTs = 0        // timestamp of last keypress-rate event with rate≥1
+    let sessionStart = 0        // when this typing session began
+    let stretchFired = false    // whether we already fired the reminder this session
+
+    const checkStretch = setInterval(() => {
+      const now = Date.now()
+      if (lastTypingTs === 0) return
+
+      if (now - lastTypingTs > STRETCH_BREAK_MS) {
+        // Typing stopped long enough — reset session
+        sessionStart = 0
+        stretchFired = false
+        lastTypingTs = 0
+        return
+      }
+
+      if (stretchFired) return
+
+      if (sessionStart && now - sessionStart >= STRETCH_WARN_MS) {
+        stretchFired = true
+        triggerStretchReminder()
+      }
+    }, 30000) // check every 30 s is plenty
+    cleanups.push(() => clearInterval(checkStretch))
+
+    function triggerStretchReminder() {
+      if (moodRef.current?.has(STATES.DRAG)) return
+      if (settingsRef.current.sound) playChime()
+      animRef.current?.playOnce(STATES.STRETCH, STATES.IDLE)
+      const tip = stretchTipRef.current
+      if (tip) {
+        tip.classList.add('visible')
+        setTimeout(() => tip?.classList.remove('visible'), 5000)
+      }
+    }
 
     cleanups.push(
       api.onMouseMove(({ x, y, velocity }) => {
@@ -255,8 +365,6 @@ export default function Cat() {
           return
         }
 
-        // Cursor watching: face + lean toward the cursor (Comnyang's
-        // eye-tracking equivalent, but works with any sprite sheet)
         const r = canvasRef.current?.getBoundingClientRect()
         if (r && !physics.walking()) {
           const centerX = window.screenX + r.left + r.width / 2
@@ -277,13 +385,19 @@ export default function Cat() {
       })
     )
 
-    // Typing rate with hysteresis bands so the cat doesn't flicker
-    // between states at the thresholds:
-    //   enter knead ≥3, exit <2.5; enter overheat ≥8, exit <7
     cleanups.push(
       api.onKeypressRate(({ rate }) => {
         const mood = moodRef.current
         if (!mood) return
+
+        // Typing-session clock for stretch reminder
+        if (rate >= 1) {
+          const now = Date.now()
+          lastTypingTs = now
+          if (!sessionStart) sessionStart = now
+        }
+
+        // Hysteresis: enter knead≥3, exit<2.5; enter overheat≥8, exit<7
         if (rate >= 8) {
           mood.set(STATES.OVERHEAT)
           mood.clear(STATES.KNEAD)
@@ -301,8 +415,6 @@ export default function Cat() {
       })
     )
 
-    // Sleep/wake driven by the main process (powerMonitor), so it
-    // survives renderer reloads and never drifts.
     cleanups.push(
       api.onIdleChange(({ idle }) => {
         const mood = moodRef.current
@@ -312,11 +424,12 @@ export default function Cat() {
         } else if (mood.has(STATES.SLEEP)) {
           mood.clear(STATES.SLEEP)
           animRef.current?.playOnce(STATES.WAKE, STATES.IDLE)
+          if (settingsRef.current.sound) playWake()
+          xpRef.current?.award('wake')
         }
       })
     )
 
-    // Main ends drags on global mouseup as a backstop
     cleanups.push(
       api.onDragEnded(() => {
         if (draggingRef.current || moodRef.current?.has(STATES.DRAG)) {
@@ -325,9 +438,25 @@ export default function Cat() {
         reportBounds()
       })
     )
+
+    // App awareness: bias idle variety and react to context switches
+    cleanups.push(
+      api.onActiveApp(({ name }) => {
+        if (!name) return
+        const n = name.toLowerCase()
+        let ctx = 'default'
+        if (/code|vim|nvim|emacs|terminal|iterm|bash|zsh|kitty|alacritty|hyper|warp|cursor/.test(n)) {
+          ctx = 'code'
+        } else if (/youtube|spotify|music\.app|vlc|netflix|plex|tidal|soundcloud|amazon music/.test(n)) {
+          ctx = 'media'
+        } else if (/notion|obsidian|docs|pages|word|writer|bear|typora|logseq/.test(n)) {
+          ctx = 'reading'
+        }
+        appContextRef.current = ctx
+      })
+    )
   }
 
-  // Mochi stretch + shake detection from global cursor deltas while held
   function trackDrag(x, y) {
     const t = dragTrackRef.current
     if (t.lastX != null) {
@@ -335,7 +464,6 @@ export default function Cat() {
       const dy = y - t.lastY
       physicsRef.current?.setDragPull(dx, dy)
 
-      // Shake: rapid horizontal direction reversals → wiggle
       const dir = Math.sign(dx)
       if (dir !== 0 && t.lastDir !== 0 && dir !== t.lastDir && Math.abs(dx) > 3) {
         const now = Date.now()
@@ -355,27 +483,18 @@ export default function Cat() {
   function endLocalDrag() {
     draggingRef.current = false
     const t = dragTrackRef.current
-    t.lastX = null
-    t.lastY = null
-    t.lastDir = 0
-    t.reversals.length = 0
-    physicsRef.current?.release() // springy landing bounce
+    t.lastX = null; t.lastY = null; t.lastDir = 0; t.reversals.length = 0
+    physicsRef.current?.release()
     moodRef.current?.clear(STATES.DRAG)
   }
 
-  // ── Pointer handlers on the canvas ─────────────────────────────────────
-  // Pet detection uses local per-event velocity (DOM events arrive at most
-  // ~60Hz, so the dt floor is safe here). Global cursor velocity for HUNT
-  // is computed separately in electron/hooks/mouse.js, which must handle
-  // 1000Hz+ mice — don't unify the two without keeping that property.
+  // ── Pointer handlers ──────────────────────────────────────────────────────
   const onMouseMove = (e) => {
     const h = hoverRef.current
     const now = performance.now()
     const dt = Math.max(8, now - h.lastT)
     const v = (Math.hypot(e.clientX - h.lastX, e.clientY - h.lastY) / dt) * 1000
-    h.lastX = e.clientX
-    h.lastY = e.clientY
-    h.lastT = now
+    h.lastX = e.clientX; h.lastY = e.clientY; h.lastT = now
 
     const mood = moodRef.current
     if (!mood || draggingRef.current) return
@@ -391,8 +510,7 @@ export default function Cat() {
 
   const onMouseEnter = (e) => {
     const h = hoverRef.current
-    h.lastX = e.clientX
-    h.lastY = e.clientY
+    h.lastX = e.clientX; h.lastY = e.clientY
     h.lastT = performance.now()
     h.slowSince = null
   }
@@ -408,7 +526,6 @@ export default function Cat() {
     draggingRef.current = true
     moodRef.current?.clear(STATES.PET)
     moodRef.current?.set(STATES.DRAG)
-    // clientX/Y are window-local DIPs — exactly the offset main needs
     window.electronAPI?.dragStart({ offsetX: e.clientX, offsetY: e.clientY })
   }
 
@@ -438,12 +555,14 @@ export default function Cat() {
           onContextMenu={onContextMenu}
         />
       </div>
+      <div ref={stretchTipRef} className="cat-stretch-tip" aria-hidden="true">
+        Time to stretch!
+      </div>
     </div>
   )
 }
 
-// Procedural sprite sheet so the app never shows a blank window,
-// even if assets are missing or fail to load. One row per state.
+// Procedural fallback sprite — renders even with zero assets
 function makeFallbackSheet() {
   const F = 32
   const COLS = Math.max(...STATE_ROWS.map(([, count]) => count))
@@ -463,18 +582,18 @@ function makeFallbackSheet() {
     for (let col = 0; col < COLS; col++) {
       const x = col * F
       const y = row * F
-      const bob = col % 2 // 1px bounce between frames
+      const bob = col % 2
       const color = colors[row % colors.length]
 
       g.fillStyle = color
-      g.fillRect(x + 8, y + 14 + bob, 16, 12)  // body
-      g.fillRect(x + 10, y + 6 + bob, 12, 10)  // head
-      g.fillRect(x + 10, y + 3 + bob, 3, 4)    // left ear
-      g.fillRect(x + 19, y + 3 + bob, 3, 4)    // right ear
-      g.fillRect(x + 24, y + 12 + bob, 2, 8)   // tail
+      g.fillRect(x + 8,  y + 14 + bob, 16, 12)
+      g.fillRect(x + 10, y + 6  + bob, 12, 10)
+      g.fillRect(x + 10, y + 3  + bob, 3,  4)
+      g.fillRect(x + 19, y + 3  + bob, 3,  4)
+      g.fillRect(x + 24, y + 12 + bob, 2,  8)
 
       g.fillStyle = '#202020'
-      g.fillRect(x + 13, y + 10 + bob, 2, 2)   // eyes
+      g.fillRect(x + 13, y + 10 + bob, 2, 2)
       g.fillRect(x + 18, y + 10 + bob, 2, 2)
     }
   }

@@ -6,13 +6,23 @@ import {
   COLOR_PRESETS,
   MAX_SHEET_BYTES,
 } from './settings.js'
+import { getLevelFromXp, xpToNext, LEVEL_THRESHOLDS } from './cat/xp.js'
 
 const SEND_THROTTLE_MS = 100
+
+function xpBarPercent(xp) {
+  const lv = getLevelFromXp(xp)
+  const lo = LEVEL_THRESHOLDS[lv] ?? 0
+  const hi = LEVEL_THRESHOLDS[lv + 1]
+  if (hi == null) return 100
+  return ((xp - lo) / (hi - lo)) * 100
+}
 
 export default function Settings() {
   const [settings, setSettings] = useState(DEFAULT_SETTINGS)
   const [loaded, setLoaded] = useState(false)
   const [fileError, setFileError] = useState(null)
+  const [xp, setXp] = useState(null)
   const fileInputRef = useRef(null)
   // Leading+trailing throttle for IPC sends: slider drags fire at ~60Hz
   // and each send carries the whole settings object (incl. a possibly
@@ -26,8 +36,13 @@ export default function Settings() {
       try {
         stored = await window.electronAPI?.getStore('settings', null)
       } catch {}
+      let storedXp = 0
+      try {
+        storedXp = await window.electronAPI?.getStore('xp', 0) ?? 0
+      } catch {}
       if (!cancelled) {
         setSettings(normalizeSettings(stored))
+        setXp(typeof storedXp === 'number' ? storedXp : 0)
         setLoaded(true)
       }
     })()
@@ -82,6 +97,11 @@ export default function Settings() {
   const resetAll = () => {
     update({ ...DEFAULT_SETTINGS })
     if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
+  const resetXp = async () => {
+    await window.electronAPI?.setStore('xp', 0)
+    setXp(0)
   }
 
   if (!loaded) return <div className="settings-root">Loading…</div>
@@ -218,13 +238,40 @@ export default function Settings() {
       </section>
 
       <section>
+        <h3>Progress</h3>
+        {xp === null ? (
+          <p className="hint">Loading…</p>
+        ) : (
+          <>
+            <p className="hint">
+              {`Level ${getLevelFromXp(xp)} · ${xp} XP total`}
+              {xpToNext(xp) != null
+                ? ` · ${xpToNext(xp)} XP to Level ${getLevelFromXp(xp) + 1}`
+                : ' · MAX LEVEL'}
+            </p>
+            <div className="xp-bar-track">
+              <div
+                className="xp-bar-fill"
+                style={{
+                  width: `${Math.min(100, xpBarPercent(xp))}%`,
+                }}
+              />
+            </div>
+          </>
+        )}
+        <div style={{ marginTop: 8 }}>
+          <button onClick={resetXp} className="danger">Reset XP</button>
+        </div>
+      </section>
+
+      <section>
         <label className="field checkbox-field">
           <input
             type="checkbox"
             checked={settings.sound}
             onChange={(e) => update({ sound: e.target.checked })}
           />
-          <span>Sounds (meow, purr)</span>
+          <span>Sounds (meow, purr, level-up)</span>
         </label>
       </section>
 

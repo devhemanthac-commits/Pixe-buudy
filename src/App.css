@@ -56,6 +56,32 @@ html, body, #root {
   cursor: grabbing;
 }
 
+/* Stretch reminder: floats above the cat, fades in/out via .visible class */
+.cat-stretch-tip {
+  position: absolute;
+  bottom: 90px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(162, 155, 254, 0.95);
+  color: #1a1a2e;
+  font-family: system-ui, sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  padding: 6px 14px;
+  border-radius: 16px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.4s ease;
+  /* Don't let the tip itself escape the stage overflow clip */
+  max-width: 90%;
+  text-align: center;
+}
+
+.cat-stretch-tip.visible {
+  opacity: 1;
+}
+
 .settings-root {
   padding: 20px 24px;
   font-family: system-ui, sans-serif;
@@ -217,4 +243,20 @@ html, body, #root {
 .actions {
   display: flex;
   gap: 10px;
+}
+
+/* XP progress bar in settings */
+.xp-bar-track {
+  height: 6px;
+  background: #2d2d4d;
+  border-radius: 3px;
+  overflow: hidden;
+  margin: 6px 0 2px;
+}
+
+.xp-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #a29bfe, #81ecec);
+  border-radius: 3px;
+  transition: width 0.4s ease;
 }
