@@ -13,8 +13,13 @@ export const STATES = {
   WALK:     'walk',
   IDLE:     'idle',
   SLEEP:    'sleep',
+  // One-shot / idle-variety animations (not part of the priority resolution)
   WAKE:     'wake',
   YAWN:     'yawn',
+  STRETCH:  'stretch',
+  SIT:      'sit',
+  DANCE:    'dance',
+  PLAY:     'play',
 }
 
 const PRIORITY = [

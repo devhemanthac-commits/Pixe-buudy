@@ -37,14 +37,164 @@ html, body, #root {
 }
 
 .settings-root {
-  padding: 24px;
+  padding: 20px 24px;
   font-family: system-ui, sans-serif;
   background: #1a1a2e;
   color: #e0e0e0;
-  height: 100vh;
+  min-height: 100vh;
+  overflow-y: auto;
+  font-size: 14px;
 }
 
 .settings-root h2 {
-  margin-bottom: 12px;
+  margin-bottom: 16px;
   color: #a29bfe;
+}
+
+.settings-root h3 {
+  margin: 4px 0 8px;
+  color: #81ecec;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.settings-root section {
+  margin-bottom: 18px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid #2d2d4d;
+}
+
+.settings-root section:last-child {
+  border-bottom: none;
+}
+
+.field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.field > span {
+  min-width: 80px;
+  color: #b2bec3;
+}
+
+.field input[type='text'],
+.field input[type='number'] {
+  background: #16162a;
+  border: 1px solid #3d3d6b;
+  border-radius: 4px;
+  color: #e0e0e0;
+  padding: 6px 8px;
+  width: 120px;
+}
+
+.slider-field input[type='range'] {
+  flex: 1;
+  accent-color: #a29bfe;
+}
+
+.slider-field .value {
+  min-width: 48px;
+  text-align: right;
+  color: #81ecec;
+  font-variant-numeric: tabular-nums;
+}
+
+.swatches {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.swatch {
+  font-size: 20px;
+  line-height: 1;
+  padding: 6px;
+  background: #16162a;
+  border: 2px solid #3d3d6b;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.swatch.active {
+  border-color: #a29bfe;
+}
+
+.preview {
+  margin-top: 6px;
+  font-size: 22px;
+  color: #b2bec3;
+}
+
+.hint {
+  color: #8395a7;
+  font-size: 12px;
+  margin-bottom: 8px;
+  line-height: 1.5;
+}
+
+.error {
+  color: #ff7675;
+  font-size: 12px;
+  margin-top: 6px;
+}
+
+.custom-sheet-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.sheet-thumb {
+  max-width: 96px;
+  max-height: 96px;
+  image-rendering: pixelated;
+  border: 1px solid #3d3d6b;
+  border-radius: 4px;
+  background: #0d0d1a;
+}
+
+.frame-size {
+  display: flex;
+  gap: 16px;
+  margin-top: 10px;
+}
+
+.frame-size .field > span {
+  min-width: auto;
+}
+
+.frame-size input[type='number'] {
+  width: 64px;
+}
+
+.checkbox-field input {
+  accent-color: #a29bfe;
+}
+
+.settings-root button {
+  background: #2d2d4d;
+  border: 1px solid #3d3d6b;
+  border-radius: 6px;
+  color: #e0e0e0;
+  padding: 8px 14px;
+  cursor: pointer;
+}
+
+.settings-root button:hover {
+  background: #3d3d6b;
+}
+
+.settings-root button.danger {
+  border-color: #c0392b;
+  color: #ff7675;
+}
+
+.actions {
+  display: flex;
+  gap: 10px;
 }

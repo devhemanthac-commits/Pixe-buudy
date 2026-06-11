@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   dragEnd: () => ipcRenderer.send('drag-end'),
   openSettings: () => ipcRenderer.send('open-settings'),
   quitApp: () => ipcRenderer.send('quit-app'),
+  updateSettings: (settings) => ipcRenderer.send('settings-updated', settings),
 
   // Main → Renderer
   onMouseMove: subscribe('mouse-move'),
@@ -27,6 +28,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onIdleChange: subscribe('idle-change'),
   onActiveApp: subscribe('active-app'),
   onDragEnded: subscribe('drag-ended'),
+  onSettingsChanged: subscribe('settings-changed'),
 
   // Persistent store
   getStore: (key, defaultValue) => ipcRenderer.invoke('get-store', key, defaultValue),

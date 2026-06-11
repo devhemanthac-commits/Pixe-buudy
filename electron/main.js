@@ -353,6 +353,14 @@ ipcMain.handle('set-store', (_event, key, value) => {
   store.set(key, value)
 })
 
+// Settings window pushes the whole settings object; persist it and
+// broadcast to the cat window so changes apply live
+ipcMain.on('settings-updated', (_event, settings) => {
+  if (!settings || typeof settings !== 'object') return
+  store.set('settings', settings)
+  safeSend('settings-changed', settings)
+})
+
 ipcMain.on('open-settings', () => openSettingsWindow())
 
 ipcMain.on('quit-app', () => app.quit())
@@ -365,8 +373,8 @@ function openSettingsWindow() {
   }
 
   settingsWindow = new BrowserWindow({
-    width: 400,
-    height: 500,
+    width: 430,
+    height: 680,
     title: 'Pixe-buudy Settings',
     resizable: false,
     alwaysOnTop: true,

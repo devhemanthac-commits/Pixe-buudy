@@ -59,9 +59,25 @@ Key design points:
 - **Steady reactions**: IPC is throttled (mouse ~30Hz, typing rate every 250ms on change), thresholds use hysteresis bands so states don't flicker, and idle/sleep is driven by `powerMonitor` in the main process so it survives renderer reloads.
 - **Crash-proofing**: single-instance lock, renderer crash auto-reload with loop detection, uncaught-exception guards, and a procedural fallback sprite sheet so the cat renders even with missing assets.
 
-## Custom sprites
+## Customization
 
-Drop your sheet at `assets/sprites/cat.png` — 32×32 frames, one row per state, in the order defined in `src/cat/sprites.js` (idle, walk, knead, overheat, sleep, wake, pet, hunt, drag, scroll, yawn). Adjust the frame counts in `sprites.js` to match.
+Right-click the cat → Settings:
+
+- **Size** — 1× to 6× pixel scale, applied live
+- **Color** — preset swatches (Ginger, Sky, Sakura, Mint, Grape, Ash) or fine-tune hue/saturation/brightness sliders
+- **Custom buddy** — import your own sprite sheet (PNG, up to 2MB) with configurable frame size; it's stored persistently and survives restarts
+- **Name** — used in reminder messages (Pomodoro/stretch phases)
+
+### Sprite sheet format
+
+One row per animation, frames left to right, in this order:
+
+```
+idle, walk, knead, overheat, sleep, wake, pet, hunt,
+drag, scroll, yawn, stretch, sit, dance, play
+```
+
+Default frame size is 32×32 (configurable for imported sheets in Settings). Sheets with fewer rows than 15 are fine — missing rows fall back to the idle animation. Frame counts per row are capped to what fits the sheet width, so narrower sheets also work. The bundled sheet lives at `assets/sprites/cat.png`; row definitions are in `src/cat/sprites.js`.
 
 ## License
 

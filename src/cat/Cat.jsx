@@ -1,23 +1,29 @@
 import { useEffect, useRef, useCallback } from 'react'
 import { Animator } from './animator.js'
 import { MoodStateMachine, STATES } from './mood.js'
+import { buildSpriteMap, STATE_ROWS } from './sprites.js'
+import { DEFAULT_SETTINGS, normalizeSettings, buildFilter } from '../settings.js'
 
 // Served from the `assets/` public dir (vite publicDir) — relative so it
 // works both on the dev server and from file:// in the packaged app.
 const SPRITE_URL = 'sprites/cat.png'
 
-const CAT_SCALE = 2
 const HUNT_VELOCITY = 450   // px/s of global cursor speed → hunt
 const HUNT_HOLD_MS = 900
 const PET_VELOCITY = 80     // px/s over the cat → petting
 const PET_DWELL_MS = 250    // must stay slow this long before purring
 const SCROLL_HOLD_MS = 800
-const YAWN_CHECK_MS = 60000
+const IDLE_VARIETY_MS = 45000
+
+// One-shots the cat picks from when idling
+const IDLE_VARIANTS = [STATES.YAWN, STATES.STRETCH, STATES.SIT, STATES.DANCE, STATES.PLAY]
 
 export default function Cat() {
   const canvasRef = useRef(null)
   const animRef = useRef(null)
   const moodRef = useRef(null)
+  const settingsRef = useRef(DEFAULT_SETTINGS)
+  const sheetSrcRef = useRef(null)
   const draggingRef = useRef(false)
   const lastCursorXRef = useRef(null)
   // Local hover tracking for pet detection
@@ -42,11 +48,10 @@ export default function Cat() {
     let disposed = false
     const cleanups = []
 
-    const init = (sheet) => {
-      if (disposed) return
-
-      const anim = new Animator(canvas, sheet)
-      anim.scale = CAT_SCALE
+    const initAnim = (sheet, map, s) => {
+      const anim = new Animator(canvas, sheet, map)
+      anim.setScale(s.scale)
+      anim.filter = buildFilter(s)
       anim.onResize = reportBounds
       anim.start()
       animRef.current = anim
@@ -58,22 +63,79 @@ export default function Cat() {
       reportBounds()
       wireSignals(cleanups)
 
-      // Occasional yawn while idle
-      const yawnTimer = setInterval(() => {
-        if (moodRef.current?.current === STATES.IDLE && Math.random() < 0.5) {
-          animRef.current?.playOnce(STATES.YAWN, STATES.IDLE)
+      // Occasional idle variety: yawn, stretch, sit, dance, play
+      const varietyTimer = setInterval(() => {
+        if (moodRef.current?.current === STATES.IDLE && Math.random() < 0.6) {
+          const pick = IDLE_VARIANTS[Math.floor(Math.random() * IDLE_VARIANTS.length)]
+          animRef.current?.playOnce(pick, STATES.IDLE)
         }
-      }, YAWN_CHECK_MS)
-      cleanups.push(() => clearInterval(yawnTimer))
+      }, IDLE_VARIETY_MS)
+      cleanups.push(() => clearInterval(varietyTimer))
+
+      // Live settings updates from the settings window
+      if (window.electronAPI) {
+        cleanups.push(
+          window.electronAPI.onSettingsChanged((raw) => {
+            applySettings(normalizeSettings(raw))
+          })
+        )
+      }
     }
 
-    const img = new Image()
-    img.onload = () => init(img)
-    img.onerror = () => {
-      console.warn('[pixe-buudy] sprite sheet missing, using fallback art')
-      init(makeFallbackSheet())
+    const loadSheet = (s, isInit) => {
+      const src = s.customSheet || SPRITE_URL
+      sheetSrcRef.current = src
+
+      const useSheet = (sheet, w, h) => {
+        if (disposed || sheetSrcRef.current !== src) return // stale load
+        const map = buildSpriteMap({
+          frameW: s.customSheet ? s.frameW : 32,
+          frameH: s.customSheet ? s.frameH : 32,
+          sheetW: w,
+          sheetH: h,
+        })
+        if (isInit && !animRef.current) initAnim(sheet, map, s)
+        else animRef.current?.setSheet(sheet, map)
+      }
+
+      const img = new Image()
+      img.onload = () => useSheet(img, img.naturalWidth, img.naturalHeight)
+      img.onerror = () => {
+        if (disposed) return
+        console.warn('[pixe-buudy] sprite sheet failed to load, using fallback art')
+        const fb = makeFallbackSheet()
+        if (sheetSrcRef.current !== src) return
+        const map = buildSpriteMap({ sheetW: fb.width, sheetH: fb.height })
+        if (isInit && !animRef.current) initAnim(fb, map, s)
+        else animRef.current?.setSheet(fb, map)
+      }
+      img.src = src
     }
-    img.src = SPRITE_URL
+
+    const applySettings = (s) => {
+      const prev = settingsRef.current
+      settingsRef.current = s
+      const anim = animRef.current
+      if (!anim) return
+      anim.setScale(s.scale)
+      anim.filter = buildFilter(s)
+      const src = s.customSheet || SPRITE_URL
+      if (src !== sheetSrcRef.current || s.frameW !== prev.frameW || s.frameH !== prev.frameH) {
+        loadSheet(s, false)
+      }
+    }
+
+    const start = async () => {
+      let stored = null
+      try {
+        stored = await window.electronAPI?.getStore('settings', null)
+      } catch {}
+      if (disposed) return
+      const s = normalizeSettings(stored)
+      settingsRef.current = s
+      loadSheet(s, true)
+    }
+    start()
 
     const onWinResize = () => reportBounds()
     window.addEventListener('resize', onWinResize)
@@ -238,14 +300,15 @@ export default function Cat() {
 }
 
 // Procedural sprite sheet so the app never shows a blank window,
-// even if assets are missing or fail to load.
+// even if assets are missing or fail to load. One row per state.
 function makeFallbackSheet() {
-  const COLS = 6
-  const ROWS = 11
   const F = 32
+  const COLS = Math.max(...STATE_ROWS.map(([, count]) => count))
+  const ROWS = STATE_ROWS.length
   const colors = [
     '#ffc864', '#64c8ff', '#c864ff', '#ff5050', '#6496ff',
-    '#ffff64', '#ff96c8', '#ff7832', '#96ff96', '#64dcdc', '#dcdcdc',
+    '#ffff64', '#ff96c8', '#ff7832', '#96ff96', '#64dcdc',
+    '#dcdcdc', '#a0e860', '#e8a060', '#f060e8', '#60f0a8',
   ]
 
   const sheet = document.createElement('canvas')

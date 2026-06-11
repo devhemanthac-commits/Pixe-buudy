@@ -1,20 +1,26 @@
 // Canvas-based sprite animator.
-// The canvas backing store is resized only when the frame size actually
+// The canvas backing store is resized only when the display size actually
 // changes — resizing every draw resets the 2D context and kills perf.
+// Supports runtime scale changes, CSS-filter color tinting, and hot-swapping
+// the sprite sheet (custom buddies).
 
-import { SPRITES, FRAME_DURATION } from './sprites.js'
+import { buildSpriteMap } from './sprites.js'
+
+const DEFAULT_MAP = buildSpriteMap()
 
 export class Animator {
-  constructor(canvas, spriteSheet) {
+  constructor(canvas, spriteSheet, spriteMap = DEFAULT_MAP) {
     this.canvas = canvas
     this.ctx = canvas.getContext('2d')
     this.sheet = spriteSheet // HTMLImageElement or HTMLCanvasElement
+    this.map = spriteMap     // { sprites, durations }
     this.state = 'idle'
     this.frameIndex = 0
     this.lastFrameTime = 0
-    this.scale = 2          // pixel-art scale factor
-    this.flipX = false      // mirror horizontally when facing left
-    this.onResize = null    // called when canvas display size changes
+    this.scale = 2           // pixel-art scale factor
+    this.flipX = false       // mirror horizontally when facing left
+    this.filter = ''         // CSS filter string, e.g. 'hue-rotate(120deg)'
+    this.onResize = null     // called when canvas display size changes
     this._rafId = null
     this._onceCallback = null
     this._cw = 0
@@ -23,7 +29,7 @@ export class Animator {
   }
 
   setState(newState, onComplete = null) {
-    if (!SPRITES[newState]) return
+    if (!this.map.sprites[newState]) return
     if (this.state === newState) return
     this.state = newState
     this.frameIndex = 0
@@ -33,7 +39,7 @@ export class Animator {
 
   // Play a one-shot animation, then return to targetState
   playOnce(state, targetState = 'idle') {
-    if (!SPRITES[state]) return
+    if (!this.map.sprites[state]) return
     this.state = state
     this.frameIndex = 0
     this.lastFrameTime = 0
@@ -42,6 +48,26 @@ export class Animator {
 
   setFlip(flip) {
     this.flipX = !!flip
+  }
+
+  // Forces a backing-store resize on the next draw (triggers onResize →
+  // the renderer re-reports cat bounds to the hit-test loop)
+  setScale(scale) {
+    const s = Math.min(8, Math.max(0.5, Number(scale) || 2))
+    if (s === this.scale) return
+    this.scale = s
+    this._cw = 0
+    this._ch = 0
+  }
+
+  // Swap the sprite sheet (and optionally its frame map) at runtime
+  setSheet(sheet, spriteMap = null) {
+    this.sheet = sheet
+    if (spriteMap) this.map = spriteMap
+    if (!this.map.sprites[this.state]) this.state = 'idle'
+    this.frameIndex = 0
+    this._cw = 0
+    this._ch = 0
   }
 
   start() {
@@ -67,10 +93,10 @@ export class Animator {
   }
 
   _update(timestamp) {
-    const frames = SPRITES[this.state]
+    const frames = this.map.sprites[this.state]
     if (!frames || frames.length === 0) return
 
-    const duration = FRAME_DURATION[this.state] || 200
+    const duration = this.map.durations[this.state] || 200
     if (timestamp - this.lastFrameTime >= duration) {
       this.lastFrameTime = timestamp
       this.frameIndex++
@@ -87,8 +113,8 @@ export class Animator {
   }
 
   _ensureSize(frame) {
-    const dw = frame.w * this.scale
-    const dh = frame.h * this.scale
+    const dw = Math.round(frame.w * this.scale)
+    const dh = Math.round(frame.h * this.scale)
     if (this._cw === dw && this._ch === dh) return
 
     const dpr = window.devicePixelRatio || 1
@@ -106,7 +132,7 @@ export class Animator {
   }
 
   _draw() {
-    const frames = SPRITES[this.state]
+    const frames = this.map.sprites[this.state]
     if (!frames || frames.length === 0) return
     // Image still loading (canvas sheets have no .complete and pass through)
     if (this.sheet.complete === false) return
@@ -114,10 +140,11 @@ export class Animator {
     const frame = frames[Math.min(this.frameIndex, frames.length - 1)]
     this._ensureSize(frame)
 
-    const dw = frame.w * this.scale
-    const dh = frame.h * this.scale
+    const dw = Math.round(frame.w * this.scale)
+    const dh = Math.round(frame.h * this.scale)
     const g = this.ctx
     g.clearRect(0, 0, dw, dh)
+    g.filter = this.filter || 'none'
 
     if (this.flipX) {
       g.save()
@@ -128,5 +155,6 @@ export class Animator {
     } else {
       g.drawImage(this.sheet, frame.x, frame.y, frame.w, frame.h, 0, 0, dw, dh)
     }
+    g.filter = 'none'
   }
 }
